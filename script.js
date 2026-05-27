@@ -21,6 +21,7 @@ const GROUPS = ['Ravne','Kutovi','T-spojevi','Križ','Strojevi','Alati'];
 const OPP   = { l:'r', r:'l', u:'d', d:'u' };
 const DELTA = { l:[0,-1], r:[0,1], u:[-1,0], d:[1,0] };
 const SCORES_KEY = 'pf_scores_v1';
+let SCORES_CACHE = null;
 
 let SOURCES = [], SINKS = [];
 
@@ -66,15 +67,53 @@ function makeSVG(key, size=30) {
   return `<svg width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" xmlns="http://www.w3.org/2000/svg">${shapes[key]||''}</svg>`;
 }
 
-function loadScores() {
+function loadLocalScores() {
   try { return JSON.parse(localStorage.getItem(SCORES_KEY)||'[]'); } catch { return []; }
 }
+function loadScores() {
+  return SCORES_CACHE || loadLocalScores();
+}
+
+async function fetchScoresFromServer() {
+  try {
+    const res = await fetch('/api/scores');
+    if (!res.ok) throw new Error('Server response not ok');
+    const data = await res.json();
+    if (Array.isArray(data)) {
+      SCORES_CACHE = data;
+      localStorage.setItem(SCORES_KEY, JSON.stringify(data, null, 2));
+    }
+  } catch (err) {
+    console.warn('Leaderboard server unavailable; using local storage', err);
+  }
+}
+
 function saveScore(entry) {
   const sc = loadScores();
   sc.push(entry);
+  SCORES_CACHE = sc;
   localStorage.setItem(SCORES_KEY, JSON.stringify(sc, null, 2));
-  return sc;
+  // attempt to save to server and return a promise that resolves to the current cache
+  return saveScoreToServer(entry).then(() => SCORES_CACHE).catch(err => {
+    console.warn('Could not save score to server', err);
+    return SCORES_CACHE;
+  });
 }
+
+async function saveScoreToServer(entry) {
+  const res = await fetch('/api/scores', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(entry),
+  });
+  if (!res.ok) throw new Error('Server response not ok');
+  const data = await res.json();
+  if (Array.isArray(data)) {
+    SCORES_CACHE = data;
+    localStorage.setItem(SCORES_KEY, JSON.stringify(data, null, 2));
+  }
+}
+
 function exportJSON() {
   const blob = new Blob([JSON.stringify(loadScores(), null, 2)], {type:'application/json'});
   const a = document.createElement('a');
@@ -98,6 +137,16 @@ function isSink(r,c)   { return SINKS.some(([sr,sc])   => sr===r && sc===c); }
 function getConn(r,c) {
   if (isSource(r,c) || isSink(r,c)) return {l:1,r:1,u:1,d:1};
   const t = grid[r][c];
+  // Treat corner tiles as T-spoj variants to ensure reliable connectivity
+  const CORNER_TO_T = {
+    pipe_ne: 'pipe_tr',
+    pipe_se: 'pipe_tr',
+    pipe_nw: 'pipe_tl',
+    pipe_sw: 'pipe_tl',
+  };
+  if (t && CORNER_TO_T[t]) {
+    return TILES[CORNER_TO_T[t]];
+  }
   return (t && TILES[t]) ? TILES[t] : {l:0,r:0,u:0,d:0};
 }
 
@@ -114,12 +163,21 @@ function computeOutput() {
       const m = cellType === 'machine' ? 2 : cellType === 'machine2' ? 4 : 1;
       const conn = getConn(r, c);
       for (const dir of ['l','r','u','d']) {
-        if (!conn[dir]) continue;
         const [dr, dc] = DELTA[dir];
         const nr = r+dr, nc = c+dc;
         if (nr < 0 || nr >= ROWS || nc < 0 || nc >= COLS) continue;
-        if (!getConn(nr, nc)[OPP[dir]]) continue;
-        dfs(nr, nc, mult * m, visited);
+        const neighborConn = getConn(nr, nc)[OPP[dir]];
+        // Normal case: current cell has connection to dir and neighbor accepts opposite
+        if (conn[dir] && neighborConn) {
+          dfs(nr, nc, mult * m, visited);
+          continue;
+        }
+        // Tolerance: corners can accept a flow from a neighbor even if their own flag is missing
+        // This makes corners behave more like a one-sided T: if neighbor connects to us, allow passage
+        const isCornerTile = (cellType && (cellType.startsWith('pipe_')) && ['pipe_ne','pipe_nw','pipe_se','pipe_sw'].includes(cellType));
+        if (isCornerTile && neighborConn) {
+          dfs(nr, nc, mult * m, visited);
+        }
       }
     } finally {
       if (typeof key !== 'undefined') visited.delete(key);
@@ -152,9 +210,9 @@ function renderGrid() {
         div.innerHTML = '<span style="font-size:20px">💧</span>';
       } else if (isSink(r, c)) {
         div.classList.add('sink');
-        div.innerHTML = `<div style="text-align:center;line-height:1.15">
-          <div style="font-size:15px">🏁</div>
-          <div style="font-size:8px;font-weight:700;color:#5ab4ff;letter-spacing:.3px">IZLAZ</div>
+        div.innerHTML = `<div style="text-align:center;line-height:1.05">
+          <div style="font-size:20px">🏁</div>
+          <div style="font-size:9px;font-weight:800;color:#2dd4bf;letter-spacing:.3px">IZLAZ</div>
         </div>`;
       } else {
         const t = grid[r][c];
@@ -163,35 +221,11 @@ function renderGrid() {
           if (svg) div.innerHTML = makeSVG(svg, 30);
           div.classList.add(t === 'machine2' ? 'machine2' : t.startsWith('machine') ? 'machine' : 'placed');
         }
-        div.addEventListener('click', () => {
+        div.addEventListener('click', (e) => {
           if (!running) return;
           const prev = grid[r][c];
-          // auto-orient corners: if the selected tool is a corner, try to pick orientation matching neighbors
-          let desired = selected;
-          const cornerIds = ['pipe_ne','pipe_nw','pipe_se','pipe_sw'];
-          if (cornerIds.includes(selected)) {
-            const dirs = ['l','r','u','d'];
-            const connectedNeighbors = [];
-            for (const dir of dirs) {
-              const [dr, dc] = DELTA[dir];
-              const nr = r + dr, nc = c + dc;
-              if (nr < 0 || nr >= ROWS || nc < 0 || nc >= COLS) continue;
-              if (getConn(nr, nc)[OPP[dir]]) connectedNeighbors.push(dir);
-            }
-            const pair = (a, b) => (connectedNeighbors.includes(a) && connectedNeighbors.includes(b));
-            if (pair('l','u')) desired = 'pipe_nw';
-            else if (pair('r','u')) desired = 'pipe_ne';
-            else if (pair('l','d')) desired = 'pipe_sw';
-            else if (pair('r','d')) desired = 'pipe_se';
-            else if (connectedNeighbors.length === 1) {
-              const d = connectedNeighbors[0];
-              if (d === 'l') desired = 'pipe_nw';
-              else if (d === 'r') desired = 'pipe_ne';
-              else if (d === 'u') desired = 'pipe_ne';
-              else if (d === 'd') desired = 'pipe_se';
-            }
-          }
-
+          // Place exactly the selected tile (no auto-orient or rotation)
+          const desired = selected;
           const next = (prev === desired) ? 'empty' : desired;
           const prevCost = TILES[prev]?.cost || 0;
           const nextCost = TILES[next]?.cost || 0;
@@ -306,9 +340,11 @@ function endGame() {
     score: totalScore,
     date:  new Date().toISOString(),
   };
-  saveScore(entry);
-  renderLeaderboard(entry);
-  showScreen('screen-lb');
+  // save locally immediately, then attempt server save and render leaderboard once done
+  saveScore(entry).then(() => {
+    renderLeaderboard(entry);
+    showScreen('screen-lb');
+  });
 }
 
 function renderLeaderboard(highlight) {
@@ -352,8 +388,32 @@ document.getElementById('quit-btn').onclick = () => {
   clearInterval(ticker);
   showScreen('screen-intro');
 };
+document.getElementById('open-lb-btn').onclick = async () => {
+  await fetchScoresFromServer();
+  renderLeaderboard();
+  showScreen('screen-lb');
+};
 document.getElementById('lb-play-again').onclick = () => {
   showScreen('screen-intro');
   document.getElementById('intro-name').value = '';
 };
 document.getElementById('lb-export').onclick = exportJSON;
+
+fetchScoresFromServer();
+
+// server availability indicator
+const serverDot = document.getElementById('server-status');
+async function updateServerStatus() {
+  try {
+    const res = await fetch('/api/scores', { method: 'HEAD' });
+    if (res.ok) {
+      serverDot.style.color = '#34d399'; // green
+      serverDot.title = 'Leaderboard server dostupan';
+    } else throw new Error('not ok');
+  } catch (err) {
+    serverDot.style.color = '#f97316'; // orange
+    serverDot.title = 'Leaderboard server nije dostupan — lokalno spremanje će se koristiti';
+  }
+}
+updateServerStatus();
+setInterval(updateServerStatus, 15000);

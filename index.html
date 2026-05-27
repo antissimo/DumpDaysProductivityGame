@@ -3,31 +3,37 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Pipe Factory — Dump Days</title>
+<title>Venio leaky pipes — Dump Days</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
 <div id="screen-intro" class="screen active">
-  <div class="intro-title">🏭 Pipe Factory</div>
-  <div class="intro-sub">Dump Days 2025 · VENIO</div>
+  <img src="Venio.png" alt="Venio" class="intro-logo">
+  <div class="intro-title">🌊 Venio leaky pipes</div>
+  <div class="intro-sub">Dump Days 2026 · VENIO</div>
   <div class="intro-form">
     <input id="intro-name" class="intro-input" placeholder="Upiši svoje ime..." maxlength="24" autocomplete="off" />
     <button class="intro-btn" id="intro-start-btn">Kreni ▶</button>
   </div>
   <div class="intro-hint">
     <strong>Kako igrati:</strong><br>
-    Spoji svih 7 izvora 💧 na jedan izlaz 🏁 kroz cijevi i strojeve.<br>
-    Strojevi množeći tok — ali svaki element košta bodove/s.<br>
+    Spoji svih 7 izvora 💧 na izlaz 🏁 koristeći Venio cijevi i strojeve.<br>
+    Svaki stroj povećava tok, ali troši bodove/s.<br>
     Rezultat = ukupni flow × sekunde. Imaš <strong>1 minutu</strong>.
   </div>
 </div>
 
 <div id="screen-game" class="screen">
   <div id="game-header">
-    <h2>🏭 Pipe Factory</h2>
+    <img src="Venio.png" alt="Venio" class="header-logo">
+    <h2>� Venio leaky pipes</h2>
     <div id="player-badge">👤 <span id="player-name-display"></span></div>
-    <button id="quit-btn">✕ Odustani</button>
+    <div class="header-actions">
+      <div id="server-status" title="Server status" aria-hidden="true">●</div>
+      <button id="open-lb-btn" title="Leaderboard">🏆</button>
+      <button id="quit-btn">✕ Odustani</button>
+    </div>
   </div>
 
   <div id="stats">
@@ -48,8 +54,8 @@
 </div>
 
 <div id="screen-lb" class="screen">
-  <div class="lb-title">🏆 Leaderboard</div>
-  <div class="lb-subtitle">Dump Days 2025 · Pipe Factory</div>
+  <div class="lb-title">🏆 Venio Leaderboard</div>
+  <div class="lb-subtitle">Dump Days 2025 · Venio Flow Lab</div>
   <div id="lb-table"></div>
   <div class="lb-actions">
     <button class="lb-btn primary" id="lb-play-again">▶ Igraj opet</button>

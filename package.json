@@ -1,0 +1,18 @@
+{
+  "name": "venio-flow-game",
+  "version": "1.0.0",
+  "description": "Venio-themed pipe flow game with local leaderboard persistence.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [
+    "venio",
+    "game",
+    "leaderboard",
+    "pipe",
+    "productivity"
+  ],
+  "author": "",
+  "license": "MIT"
+}
