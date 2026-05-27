@@ -166,7 +166,33 @@ function renderGrid() {
         div.addEventListener('click', () => {
           if (!running) return;
           const prev = grid[r][c];
-          const next = (prev === selected) ? 'empty' : selected;
+          // auto-orient corners: if the selected tool is a corner, try to pick orientation matching neighbors
+          let desired = selected;
+          const cornerIds = ['pipe_ne','pipe_nw','pipe_se','pipe_sw'];
+          if (cornerIds.includes(selected)) {
+            const dirs = ['l','r','u','d'];
+            const connectedNeighbors = [];
+            for (const dir of dirs) {
+              const [dr, dc] = DELTA[dir];
+              const nr = r + dr, nc = c + dc;
+              if (nr < 0 || nr >= ROWS || nc < 0 || nc >= COLS) continue;
+              if (getConn(nr, nc)[OPP[dir]]) connectedNeighbors.push(dir);
+            }
+            const pair = (a, b) => (connectedNeighbors.includes(a) && connectedNeighbors.includes(b));
+            if (pair('l','u')) desired = 'pipe_nw';
+            else if (pair('r','u')) desired = 'pipe_ne';
+            else if (pair('l','d')) desired = 'pipe_sw';
+            else if (pair('r','d')) desired = 'pipe_se';
+            else if (connectedNeighbors.length === 1) {
+              const d = connectedNeighbors[0];
+              if (d === 'l') desired = 'pipe_nw';
+              else if (d === 'r') desired = 'pipe_ne';
+              else if (d === 'u') desired = 'pipe_ne';
+              else if (d === 'd') desired = 'pipe_se';
+            }
+          }
+
+          const next = (prev === desired) ? 'empty' : desired;
           const prevCost = TILES[prev]?.cost || 0;
           const nextCost = TILES[next]?.cost || 0;
           const newTotal = computeCost() - prevCost + nextCost;
